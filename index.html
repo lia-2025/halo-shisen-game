@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ヘイロー四川省</title>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #f5f5f5;
+      padding-top: 20px;
+    }
+    #capture-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #title {
+      font-size: 28px;
+      font-weight: bold;
+      margin-bottom: 12px;
+    }
+    #timer, #clear-time {
+      font-size: 20px;
+      margin-bottom: 4px;
+    }
+    #penalty-effect, #message-area {
+      font-size: 18px;
+      color: red;
+      font-weight: bold;
+      margin-bottom: 4px;
+      height: 24px;
+      transition: opacity 0.3s;
+    }
+    .buttons {
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .buttons > button {
+      margin: 4px 0;
+    }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 64px);
+      grid-gap: 4px;
+      margin-bottom: 20px;
+    }
+    .tile {
+      width: 64px;
+      height: 64px;
+      border: 1px solid #ccc;
+      background-color: #fff;
+      cursor: pointer;
+    }
+    .tile img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .selected {
+      outline: 3px solid red;
+    }
+    .hint {
+      outline: 3px solid orange;
+    }
+    .removed {
+      visibility: hidden;
+    }
+    button {
+      padding: 8px 16px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="capture-area">
+    <div id="title">ヘイロー四川省</div>
+    <div id="timer">経過時間：0分0秒</div>
+    <div id="penalty-effect"></div>
+    <div id="message-area"></div>
+    <div id="clear-time"></div>
+    <div class="buttons">
+      <button id="hint-btn" onclick="showHint()">ヒント</button>
+      <button id="shuffle-btn" onclick="shuffleBoard({ penalty: true })">シャッフル</button>
+      <button id="screenshot-btn" onclick="takeScreenshot()" style="display: none;">スクリーンショットを保存</button>
+    </div>
+    <div class="board" id="board"></div>
+  </div>
+
+  <script>
+    let addedPenalty = 0;
+    let startTime = Date.now();
+    let timerInterval;
+    const boardSize = 8;
+    const totalPairs = 112;
+    const selectPairs = 32;
+    let boardData = [];
+    let tileElements = [];
+    let selectedTiles = [];
+    let hintTiles = [];
+
+    function formatTime(seconds) {
+      const min = Math.floor(seconds / 60);
+      const sec = seconds % 60;
+      return `${min}分${sec}秒`;
+    }
+
+    function updateTimer() {
+      const now = Date.now();
+      const baseElapsed = Math.floor((now - startTime) / 1000);
+      const totalElapsed = baseElapsed + addedPenalty;
+      document.getElementById("timer").textContent = `経過時間：${formatTime(totalElapsed)}`;
+    }
+
+    function startTimer() {
+      startTime = Date.now();
+      addedPenalty = 0;
+      timerInterval = setInterval(updateTimer, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(timerInterval);
+    }
+
+    function addPenalty(seconds) {
+      addedPenalty += seconds;
+      const effect = document.getElementById("penalty-effect");
+      effect.textContent = `+${seconds}秒！`;
+      effect.style.opacity = 1;
+      setTimeout(() => { effect.style.opacity = 0; }, 1500);
+      updateTimer();
+    }
+
+    function showMessage(text) {
+      const msg = document.getElementById("message-area");
+      msg.textContent = text;
+      msg.style.opacity = 1;
+      setTimeout(() => {
+        msg.style.opacity = 0;
+      }, 2000);
+    }
+
+    function extractNumber(filename) {
+      const match = filename.match(/A?(\d+)\.png$/);
+      return match ? parseInt(match[1], 10) : null;
+    }
+
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+    }
+
+    function initializeBoard() {
+      const selectedPairNumbers = Array.from({ length: totalPairs }, (_, i) => i + 1).sort(() => Math.random() - 0.5).slice(0, selectPairs);
+      const images = [];
+      for (const num of selectedPairNumbers) {
+        images.push(`images/${num}.png`);
+        images.push(`images/A${num}.png`);
+      }
+      shuffle(images);
+      boardData = Array(boardSize).fill().map(() => Array(boardSize).fill(null));
+      tileElements = [];
+      const board = document.getElementById("board");
+      board.innerHTML = "";
+
+      for (let i = 0; i < boardSize * boardSize; i++) {
+        const row = Math.floor(i / boardSize);
+        const col = i % boardSize;
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.dataset.row = row;
+        tile.dataset.col = col;
+        tile.dataset.src = images[i];
+        const img = document.createElement("img");
+        img.src = images[i];
+        tile.appendChild(img);
+        board.appendChild(tile);
+        tileElements.push(tile);
+        boardData[row][col] = images[i];
+        tile.addEventListener("click", () => handleTileClick(tile, row, col));
+      }
+    }
+
+    function handleTileClick(tile, row, col) {
+      if (tile.classList.contains("removed")) return;
+      const alreadySelected = selectedTiles.find(s => s.row === row && s.col === col);
+      if (alreadySelected) {
+        tile.classList.remove("selected");
+        if (hintTiles.includes(tile)) tile.classList.add("hint");
+        selectedTiles = selectedTiles.filter(s => !(s.row === row && s.col === col));
+        return;
+      }
+      if (selectedTiles.length === 2) clearSelection();
+      tile.classList.remove("hint");
+      tile.classList.add("selected");
+      selectedTiles.push({ tile, row, col, src: tile.dataset.src });
+      if (selectedTiles.length === 2) {
+        const [t1, t2] = selectedTiles;
+        const n1 = extractNumber(t1.src);
+        const n2 = extractNumber(t2.src);
+        // ペアが一致し、かつ接続可能な場合のみ消す
+        if (n1 === n2 && isConnectable(t1.row, t1.col, t2.row, t2.col)) {
+          setTimeout(() => {
+            t1.tile.classList.add("removed");
+            t2.tile.classList.add("removed");
+            boardData[t1.row][t1.col] = null;
+            boardData[t2.row][t2.col] = null;
+            clearSelection();
+            checkGameClear();
+          }, 200);
+        } else {
+          setTimeout(clearSelection, 500);
+        }
+      }
+    }
+
+    function clearSelection() {
+      for (const s of selectedTiles) {
+        s.tile.classList.remove("selected");
+        if (hintTiles.includes(s.tile)) s.tile.classList.add("hint");
+      }
+      selectedTiles = [];
+    }
+
+    function clearHint() {
+      for (const h of hintTiles) h.classList.remove("hint");
+      hintTiles = [];
+    }
+
+    function showHint() {
+      clearHint();
+      for (let i = 0; i < tileElements.length; i++) {
+        const tile1 = tileElements[i];
+        if (tile1.classList.contains("removed")) continue;
+        const row1 = parseInt(tile1.dataset.row);
+        const col1 = parseInt(tile1.dataset.col);
+        const n1 = extractNumber(tile1.dataset.src);
+        for (let j = i + 1; j < tileElements.length; j++) {
+          const tile2 = tileElements[j];
+          if (tile2.classList.contains("removed")) continue;
+          const row2 = parseInt(tile2.dataset.row);
+          const col2 = parseInt(tile2.dataset.col);
+          const n2 = extractNumber(tile2.dataset.src);
+          // ここでペアとして取れるか確認してから、ヒントを表示
+          if (n1 === n2 && isConnectable(row1, col1, row2, col2)) {
+            tile1.classList.add("hint");
+            tile2.classList.add("hint");
+            hintTiles = [tile1, tile2];
+            addPenalty(20);
+            return;
+          }
+        }
+      }
+      showMessage("ペアが見つからないためシャッフルします！");
+      shuffleBoard({ penalty: false });
+    }
+
+    function shuffleBoard({ penalty }) {
+      if (document.getElementById("clear-time").textContent) return;
+      if (penalty) addPenalty(20);
+      clearSelection();
+      clearHint();
+      const remainingTiles = tileElements.filter(tile => !tile.classList.contains('removed'));
+      const remainingImages = remainingTiles.map(tile => tile.dataset.src);
+      shuffle(remainingImages);
+      let index = 0;
+      for (let tile of remainingTiles) {
+        const row = parseInt(tile.dataset.row);
+        const col = parseInt(tile.dataset.col);
+        const newSrc = remainingImages[index++];
+        tile.dataset.src = newSrc;
+        tile.querySelector('img').src = newSrc;
+        boardData[row][col] = newSrc;
+      }
+    }
+
+    function checkGameClear() {
+      const remaining = tileElements.filter(tile => !tile.classList.contains("removed"));
+      if (remaining.length === 0) {
+        stopTimer();
+        const totalTime = Math.floor((Date.now() - startTime) / 1000) + addedPenalty;
+        document.getElementById("clear-time").textContent = `クリアタイム：${formatTime(totalTime)}`;
+        document.getElementById("screenshot-btn").style.display = "inline-block";
+        document.getElementById("hint-btn").disabled = true;
+        document.getElementById("shuffle-btn").disabled = true;
+
+        const resultImg = document.createElement("img");
+        resultImg.src = "images/clear.png";
+        resultImg.alt = "クリア！";
+        resultImg.style.marginTop = "8px";
+        resultImg.style.width = "450px";
+        resultImg.style.border = "2px solid #ccc";
+        document.getElementById("clear-time").insertAdjacentElement("afterend", resultImg);
+        return;
+      }
+
+      for (let i = 0; i < remaining.length; i++) {
+        const tile1 = remaining[i];
+        const row1 = parseInt(tile1.dataset.row);
+        const col1 = parseInt(tile1.dataset.col);
+        const n1 = extractNumber(tile1.dataset.src);
+        for (let j = i + 1; j < remaining.length; j++) {
+          const tile2 = remaining[j];
+          const row2 = parseInt(tile2.dataset.row);
+          const col2 = parseInt(tile2.dataset.col);
+          const n2 = extractNumber(tile2.dataset.src);
+          if (n1 === n2 && isConnectable(row1, col1, row2, col2)) {
+            return;
+          }
+        }
+      }
+
+      showMessage("ペアが見つからないためシャッフルします！");
+      shuffleBoard({ penalty: false });
+    }
+
+    function takeScreenshot() {
+      const target = document.getElementById("capture-area");
+      html2canvas(target).then(canvas => {
+        const link = document.createElement("a");
+        link.download = "clear_result.png";
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+
+    function isConnectable(r1, c1, r2, c2) {
+      const H = boardSize + 2;
+      const W = boardSize + 2;
+      const padded = Array.from({ length: H }, (_, y) =>
+        Array.from({ length: W }, (_, x) => {
+          const py = y - 1, px = x - 1;
+          if (py >= 0 && py < boardSize && px >= 0 && px < boardSize) {
+            return boardData[py][px] === null ? 0 : 1;
+          }
+          return 0;
+        })
+      );
+
+      const sr = r1 + 1, sc = c1 + 1;
+      const er = r2 + 1, ec = c2 + 1;
+
+      const visited = Array.from({ length: H }, () => Array(W).fill(3));
+      const queue = [];
+      queue.push({ r: sr, c: sc, dir: null, turns: 0 });
+      visited[sr][sc] = 0;
+
+      const dirs = [
+        { dr: -1, dc: 0 },
+        { dr: 1, dc: 0 },
+        { dr: 0, dc: -1 },
+        { dr: 0, dc: 1 }
+      ];
+
+      while (queue.length > 0) {
+        const { r, c, dir, turns } = queue.shift();
+        for (let i = 0; i < dirs.length; i++) {
+          const { dr, dc } = dirs[i];
+          let nr = r + dr;
+          let nc = c + dc;
+          let newTurns = dir === null || dir === i ? turns : turns + 1;
+
+          while (
+            nr >= 0 && nr < H && nc >= 0 && nc < W &&
+            (padded[nr][nc] === 0 || (nr === er && nc === ec))
+          ) {
+            if (newTurns > 2) break;
+            if (visited[nr][nc] > newTurns) {
+              visited[nr][nc] = newTurns;
+              if (nr === er && nc === ec) return true;
+              queue.push({ r: nr, c: nc, dir: i, turns: newTurns });
+            }
+            nr += dr;
+            nc += dc;
+          }
+        }
+      }
+      return false;
+    }
+
+    initializeBoard();
+    startTimer();
+  </script>
+</body>
+</html>
