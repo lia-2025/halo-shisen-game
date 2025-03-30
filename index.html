@@ -131,7 +131,7 @@
     function addPenalty(seconds) {
       addedPenalty += seconds;
       const effect = document.getElementById("penalty-effect");
-      effect.textContent = `+${seconds}秒！`;
+      effect.textContent = `+${seconds}秒`;
       effect.style.opacity = 1;
       setTimeout(() => { effect.style.opacity = 0; }, 1500);
       updateTimer();
@@ -259,7 +259,7 @@
           }
         }
       }
-      showMessage("ペアが見つからないためシャッフルします！");
+      showMessage("ペアが見つからないためシャッフルします");
       shuffleBoard({ penalty: false });
     }
 
@@ -318,7 +318,7 @@
         }
       }
 
-      showMessage("ペアが見つからないためシャッフルします！");
+      showMessage("ペアが見つからないためシャッフルします");
       shuffleBoard({ penalty: false });
     }
 
